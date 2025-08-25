@@ -1,513 +1,610 @@
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MUN Real-Time Marksheet</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;500;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #111827; /* bg-gray-900 */
-        }
-        .font-orbitron {
-            font-family: 'Orbitron', sans-serif;
-        }
-        /* Custom scrollbar for a better look */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #1f2937; /* bg-gray-800 */
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #4f46e5; /* bg-indigo-600 */
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #6366f1; /* bg-indigo-500 */
-        }
-        /* Style for number inputs */
-        input[type="number"] {
-            -moz-appearance: textfield;
-        }
-        input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        /* Transition for delegate list sorting */
-        #delegate-list > div {
-            transition: all 0.5s ease-in-out;
-        }
-        /* Watermark Style */
-        .watermark {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.1);
-            pointer-events: none;
-            z-index: 1000;
-        }
-    </style>
-</head>
-<body class="text-gray-200">
+import React, { useMemo, useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 
-    <!-- Watermark -->
-    <div class="watermark font-orbitron">A Sameer Jhamb Marking Scheme</div>
+// --- Helpers ---------------------------------------------------------------
+const uid = () => Math.random().toString(36).slice(2, 9);
+const lsKey = "mun-marking-v1";
 
-    <!-- Main Container -->
-    <div class="container mx-auto p-4 md:p-6 lg:p-8 max-w-7xl">
+function saveToLS(data) {
+  try { localStorage.setItem(lsKey, JSON.stringify(data)); } catch {}
+}
+function loadFromLS() {
+  try {
+    const raw = localStorage.getItem(lsKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
 
-        <!-- Header -->
-        <header class="text-center mb-8">
-            <h1 class="text-4xl md:text-5xl font-bold font-orbitron text-indigo-400">MUN Command Center</h1>
-            <p class="text-gray-400 mt-2">Live Delegate Scoring & Leaderboard</p>
-            <div id="auth-status" class="mt-2 text-xs text-gray-500">Connecting...</div>
-        </header>
-        
-        <!-- Controls Section -->
-        <div class="bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-gray-700">
-            <div class="flex flex-col md:flex-row gap-4 justify-between">
-                <!-- Add Delegate Form -->
-                <div class="flex-grow">
-                    <h2 class="text-2xl font-bold mb-4 text-indigo-300">Add New Delegate</h2>
-                    <form id="add-delegate-form" class="flex flex-col sm:flex-row items-center gap-4">
-                        <input type="text" id="delegate-name" placeholder="Enter Portfolio (e.g., Canada)" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" required>
-                        <button type="submit" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg transition-transform transform hover:scale-105">
-                            Add Delegate
-                        </button>
-                    </form>
-                </div>
-                <!-- Action Buttons -->
-                <div class="flex-shrink-0">
-                     <h2 class="text-2xl font-bold mb-4 text-indigo-300">Tools</h2>
-                     <div class="flex flex-col sm:flex-row gap-4">
-                        <button id="recognition-sheet-btn" class="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg transition">Recognition Sheet</button>
-                        <button id="export-btn" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition">Export to Excel</button>
-                    </div>
-                </div>
-            </div>
+// --- Default Config (matches your sheet’s structure but fully editable) ---
+const defaultConfig = {
+  committee: "WHO – AIS",
+  scoring: {
+    speeches: [
+      { name: "Speech 1", fields: [
+        { key: "s1_research", label: "Research", max: 3 },
+        { key: "s1_analysis", label: "Analysis", max: 4 },
+        { key: "s1_impact", label: "Impact", max: 3 },
+      ]},
+      { name: "Speech 2", fields: [
+        { key: "s2_research", label: "Research", max: 3 },
+        { key: "s2_analysis", label: "Analysis", max: 4 },
+        { key: "s2_impact", label: "Impact", max: 3 },
+      ]},
+      { name: "Speech 3", fields: [
+        { key: "s3_research", label: "Research", max: 3 },
+        { key: "s3_analysis", label: "Analysis", max: 4 },
+        { key: "s3_impact", label: "Impact", max: 3 },
+      ]},
+    ],
+    participation: [
+      { key: "poo", label: "POO (x1)", max: 999, weight: 1 },
+      { key: "poi", label: "POI (x1)", max: 999, weight: 1 },
+      { key: "replies", label: "Replies (x1)", max: 999, weight: 1 },
+    ],
+    extras: [
+      { key: "verbatim", label: "Verbatim items (count) × 5", perItem: 5 },
+      { key: "documentation", label: "Documentation (/25)", max: 25 },
+      { key: "diplomacy", label: "Diplomatic Courtesy (/3.5)", max: 3.5 },
+      { key: "lobbying", label: "Lobbying (/3.5)", max: 3.5 },
+      { key: "substantive", label: "Substantive chits (count) × 5", perItem: 5 },
+      { key: "replypoi", label: "Reply & POI bonus (count) × 1", perItem: 1 },
+      { key: "chits", label: "Non‑substantive chits (/5)", max: 5 },
+    ],
+  },
+  awards: [
+    { key: "BD", label: "Best Delegate", count: 1 },
+    { key: "HC", label: "High Commendation", count: 1 },
+    { key: "SM", label: "Special Mention", count: 3 },
+    { key: "VM", label: "Verbal Mention", count: 2 },
+  ],
+};
+
+const defaultDelegates = [
+  // Start empty — add your portfolios easily
+];
+
+// --- Core App --------------------------------------------------------------
+export default function App() {
+  const [config, setConfig] = useState(() => loadFromLS()?.config || defaultConfig);
+  const [delegates, setDelegates] = useState(() => loadFromLS()?.delegates || defaultDelegates);
+  const [activeTab, setActiveTab] = useState("mark"); // mark | recognition | notes | settings
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => saveToLS({ config, delegates }), [config, delegates]);
+
+  const addDelegate = () => {
+    const sNo = delegates.length ? Math.max(...delegates.map(d => d.sno || 0)) + 1 : 1;
+    setDelegates(d => [...d, {
+      id: uid(),
+      sno: sNo,
+      portfolio: "",
+      scores: {},
+      counts: { verbatim: 0, substantive: 0, replypoi: 0, poo: 0, poi: 0, replies: 0 },
+      notes: "",
+      award: "",
+    }]);
+  };
+
+  const removeDelegate = (id) => setDelegates(d => d.filter(x => x.id !== id));
+
+  const setScore = (id, key, value) => setDelegates(d => d.map(row => row.id === id ? {
+    ...row,
+    scores: { ...row.scores, [key]: value }
+  } : row));
+
+  const setCount = (id, key, value) => setDelegates(d => d.map(row => row.id === id ? {
+    ...row,
+    counts: { ...row.counts, [key]: value }
+  } : row));
+
+  const setMeta = (id, field, value) => setDelegates(d => d.map(row => row.id === id ? { ...row, [field]: value } : row));
+
+  const compute = (row) => {
+    let speechTotal = 0;
+    config.scoring.speeches.forEach(s => {
+      s.fields.forEach(f => {
+        const v = Number(row.scores[f.key] ?? 0);
+        speechTotal += clamp(v, 0, f.max);
+      });
+    });
+
+    let participation = 0;
+    config.scoring.participation.forEach(p => {
+      const c = Number(row.counts[p.key] ?? 0);
+      participation += clamp(c, 0, p.max) * (p.weight ?? 1);
+    });
+
+    let extras = 0;
+    config.scoring.extras.forEach(e => {
+      if (e.perItem) {
+        const c = Number(row.counts[e.key] ?? 0);
+        extras += clamp(c, 0, 9999) * e.perItem;
+      } else {
+        const v = Number(row.scores[e.key] ?? 0);
+        extras += clamp(v, 0, e.max ?? 1000);
+      }
+    });
+
+    const total = round2(speechTotal + participation + extras);
+    return { speechTotal: round2(speechTotal), participation: round2(participation), extras: round2(extras), total };
+  };
+
+  const rows = useMemo(() => delegates.map(d => ({ ...d, calc: compute(d) })), [delegates, config]);
+  const ranked = useMemo(() => [...rows].sort((a,b) => b.calc.total - a.calc.total), [rows]);
+
+  const exportExcel = () => {
+    const wsData = [
+      ["S.NO", "Portfolio", ...config.scoring.speeches.flatMap(s => s.fields.map(f => `${s.name} – ${f.label} (/ ${f.max})`)),
+       ...config.scoring.participation.map(p => `${p.label}`),
+       ...config.scoring.extras.map(e => e.perItem ? `${e.label}` : `${e.label} (/ ${e.max})`),
+       "Speech Total", "Participation", "Extras", "FINAL"],
+      ...rows.map(r => [
+        r.sno, r.portfolio,
+        ...config.scoring.speeches.flatMap(s => s.fields.map(f => Number(r.scores[f.key] ?? 0))),
+        ...config.scoring.participation.map(p => Number(r.counts[p.key] ?? 0) * (p.weight ?? 1)),
+        ...config.scoring.extras.map(e => e.perItem ? Number(r.counts[e.key] ?? 0) * e.perItem : Number(r.scores[e.key] ?? 0)),
+        r.calc.speechTotal, r.calc.participation, r.calc.extras, r.calc.total,
+      ])
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Marking");
+
+    // Recognition sheet
+    const recRows = [["Award", "S.NO", "Portfolio", "Score"], ...ranked.filter(r => r.award).map(r => [r.award, r.sno, r.portfolio, r.calc.total])];
+    const ws2 = XLSX.utils.aoa_to_sheet(recRows);
+    XLSX.utils.book_append_sheet(wb, ws2, "Recognition");
+
+    // Verbatim notes
+    const notesRows = [["S.NO", "Portfolio", "Notes"], ...rows.map(r => [r.sno, r.portfolio, r.notes || ""] )];
+    const ws3 = XLSX.utils.aoa_to_sheet(notesRows);
+    XLSX.utils.book_append_sheet(wb, ws3, "Verbatim");
+
+    XLSX.writeFile(wb, `${(config.committee || "committee").replace(/\s+/g,'_')}_marking.xlsx`);
+  };
+
+  const importJSON = (file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (parsed.config && parsed.delegates) {
+          setConfig(parsed.config); setDelegates(parsed.delegates);
+        } else if (parsed.delegates) {
+          setDelegates(parsed.delegates);
+        }
+      } catch (e) { alert("Invalid JSON"); }
+    };
+    reader.readAsText(file);
+  };
+
+  const exportJSON = () => {
+    const blob = new Blob([JSON.stringify({ config, delegates }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${(config.committee||'committee').replace(/\s+/g,'_')}_backup.json`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const resetAll = () => {
+    if (!confirm("Clear all data?")) return;
+    setConfig(defaultConfig); setDelegates([]);
+  };
+
+  const visible = rows.filter(r => (r.portfolio||"" ).toLowerCase().includes(filter.toLowerCase()) || String(r.sno||"").includes(filter));
+
+  return (
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto font-sans">
+      <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <h1 className="text-2xl md:text-3xl font-bold">MUN Marking Dashboard</h1>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn" onClick={addDelegate}>+ Add Delegate</button>
+          <button className="btn" onClick={exportExcel}>Export Excel</button>
+          <button className="btn" onClick={exportJSON}>Backup JSON</button>
+          <label className="btn cursor-pointer"><input type="file" accept="application/json" className="hidden" onChange={e=> e.target.files?.[0] && importJSON(e.target.files[0])}/>Import JSON</label>
+          <button className="btn danger" onClick={resetAll}>Reset</button>
         </div>
+      </header>
 
-
-        <!-- Delegate List / Leaderboard -->
-        <div id="delegate-list" class="space-y-4">
-            <!-- Delegate cards will be injected here by JavaScript -->
+      <nav className="mt-4 flex gap-2">
+        {[
+          {k:"mark", t:"Marking"},
+          {k:"recognition", t:"Recognition"},
+          {k:"notes", t:"Verbatim Notes"},
+          {k:"settings", t:"Settings"},
+          {k:"table", t:"Table View"},
+        ].map(tab => (
+          <button key={tab.k} onClick={()=>setActiveTab(tab.k)} className={`tab ${activeTab===tab.k? 'tab-active':''}`}>{tab.t}</button>
+        ))}
+        <div className="ml-auto">
+          <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search S.NO / Portfolio" className="inp w-64"/>
         </div>
-         <div id="loading-spinner" class="text-center py-10">
-            <svg class="animate-spin h-8 w-8 text-indigo-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p class="mt-2 text-gray-400">Loading Delegates...</p>
-        </div>
+      </nav>
 
+      {activeTab === "mark" && (
+        <div className="mt-6 grid gap-4">
+          {visible.map(r => (
+            <DelegateCard key={r.id} row={r} config={config} setMeta={setMeta} setScore={setScore} setCount={setCount} removeDelegate={removeDelegate} />
+          ))}
+          {visible.length===0 && <p className="text-sm opacity-70">No delegates yet. Click “+ Add Delegate”.</p>}
+        </div>
+      )}
+
+      {activeTab === "recognition" && (
+        <RecognitionTab ranked={ranked} config={config} setMeta={setMeta} />
+      )}
+
+      {activeTab === "notes" && (
+        <NotesTab rows={visible} setMeta={setMeta} />
+      )}
+
+      {activeTab === "settings" && (
+        <SettingsTab config={config} setConfig={setConfig} />
+      )}
+
+      {activeTab === "table" && (
+        <TableView rows={visible} config={config} setScore={setScore} setCount={setCount} />
+      )}
+
+      <footer className="mt-10 text-xs opacity-60">
+        <p>Auto‑saves locally • Fully offline • Configurable to your rubric • Excel export compatible</p>
+      </footer>
+
+      <style>{css}</style>
     </div>
+  );
+}
 
-    <!-- Marking Modal -->
-    <div id="marking-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
-        <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col border border-gray-700">
-            <div class="p-6 border-b border-gray-700 flex justify-between items-center">
-                <h2 class="text-2xl font-bold text-indigo-300">Marking: <span id="modal-delegate-name"></span></h2>
-                 <div class="text-right">
-                    <span class="text-3xl font-orbitron text-green-400" id="modal-total-score">0.00</span>
-                    <p class="text-sm text-gray-400">Total Score</p>
-                </div>
-            </div>
-            <div class="p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6">
-                <form id="marking-form" class="flex-grow md:w-2/3">
-                    <input type="hidden" id="modal-delegate-id">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                        <!-- Speech Columns -->
-                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                            <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Speech 1</h3>
-                            <div class="space-y-2"><label class="block text-sm">Research (3): <input type="number" step="0.01" name="s1_research" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Analysis (4): <input type="number" step="0.01" name="s1_analysis" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Impact (3): <input type="number" step="0.01" name="s1_impact" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div>
-                        </div>
-                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                            <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Speech 2</h3>
-                            <div class="space-y-2"><label class="block text-sm">Research (3): <input type="number" step="0.01" name="s2_research" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Analysis (4): <input type="number" step="0.01" name="s2_analysis" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Impact (3): <input type="number" step="0.01" name="s2_impact" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div>
-                        </div>
-                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                            <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Speech 3</h3>
-                            <div class="space-y-2"><label class="block text-sm">Research (3): <input type="number" step="0.01" name="s3_research" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Analysis (4): <input type="number" step="0.01" name="s3_analysis" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Impact (3): <input type="number" step="0.01" name="s3_impact" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div>
-                        </div>
-                    </div>
-                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <!-- Other Criteria -->
-                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Interaction</h3><div class="space-y-2"><label class="block text-sm">POO (1): <input type="number" step="0.01" name="poo" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">POI (1): <input type="number" step="0.01" name="poi" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Replies (1): <input type="number" step="0.01" name="replies" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
-                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Diplomacy</h3><div class="space-y-2"><label class="block text-sm">Courtesy (5): <input type="number" step="0.01" name="diplomatic_courtesy" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Lobbying (5): <input type="number" step="0.01" name="lobbying" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
-                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Chits</h3><div class="space-y-2"><label class="block text-sm">Substantive (5): <input type="number" step="0.01" name="chits_substantive" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Reply/POI (1): <input type="number" step="0.01" name="chits_reply" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
-                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Documentation</h3><div class="space-y-2"><label class="block text-sm">Drafting (5): <input type="number" step="0.01" name="documentation" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Final Docs (25): <input type="number" step="0.01" name="final_doc" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
-                    </div>
-                </form>
-                <div class="md:w-1/3 flex flex-col bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                    <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Verbatim Notes</h3>
-                    <textarea id="verbatim-notes" class="w-full flex-grow bg-gray-700 p-2 rounded text-sm" placeholder="Type verbatim notes here..."></textarea>
-                </div>
-            </div>
-            <div class="p-6 border-t border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-4">
-                 <button id="delete-delegate-btn" class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition">Delete Delegate</button>
-                <div>
-                    <button id="close-modal-btn" class="w-full sm:w-auto bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition mr-2">Close</button>
-                    <button id="save-changes-btn" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition">Save Changes</button>
-                </div>
-            </div>
+function DelegateCard({ row, config, setMeta, setScore, setCount, removeDelegate }) {
+  return (
+    <div className="card">
+      <div className="flex items-center gap-3">
+        <input className="inp w-20" type="number" value={row.sno ?? ""} onChange={e=> setMeta(row.id, 'sno', Number(e.target.value))} placeholder="S.NO"/>
+        <input className="inp flex-1" value={row.portfolio ?? ""} onChange={e=> setMeta(row.id, 'portfolio', e.target.value)} placeholder="Portfolio / Country"/>
+        <div className="ml-auto text-right">
+          <div className="text-xs">TOTAL</div>
+          <div className="text-2xl font-bold">{row.calc.total.toFixed(2)}</div>
         </div>
+        <button className="icon danger" title="Remove" onClick={()=>removeDelegate(row.id)}>×</button>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-4 mt-4">
+        {config.scoring.speeches.map(s => (
+          <div key={s.name} className="subcard">
+            <div className="font-semibold mb-2">{s.name}</div>
+            <div className="grid grid-cols-2 gap-2">
+              {s.fields.map(f => (
+                <NumberInput key={f.key} label={`${f.label} (/ ${f.max})`} value={row.scores[f.key] ?? ""} onChange={v=> setScore(row.id, f.key, v)} max={f.max} />
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <div className="subcard">
+          <div className="font-semibold mb-2">Participation</div>
+          <div className="grid grid-cols-2 gap-2">
+            {config.scoring.participation.map(p => (
+              <NumberInput key={p.key} label={p.label} value={row.counts[p.key] ?? ""} onChange={v=> setCount(row.id, p.key, v)} integer />
+            ))}
+          </div>
+        </div>
+
+        <div className="subcard md:col-span-2">
+          <div className="font-semibold mb-2">Extras</div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {config.scoring.extras.map(e => (
+              e.perItem ? (
+                <NumberInput key={e.key} label={e.label} value={row.counts[e.key] ?? ""} onChange={v=> setCount(row.id, e.key, v)} integer />
+              ) : (
+                <NumberInput key={e.key} label={e.label} value={row.scores[e.key] ?? ""} onChange={v=> setScore(row.id, e.key, v)} max={e.max} />
+              )
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 md:grid-cols-6 gap-3 text-sm">
+        <div>
+          <div className="lbl">Speech Total</div>
+          <div className="val">{row.calc.speechTotal.toFixed(2)}</div>
+        </div>
+        <div>
+          <div className="lbl">Participation</div>
+          <div className="val">{row.calc.participation.toFixed(2)}</div>
+        </div>
+        <div>
+          <div className="lbl">Extras</div>
+          <div className="val">{row.calc.extras.toFixed(2)}</div>
+        </div>
+        <div>
+          <div className="lbl">Award</div>
+          <select className="inp" value={row.award || ""} onChange={e=> setMeta(row.id, 'award', e.target.value)}>
+            <option value="">—</option>
+            <option>BD</option>
+            <option>HC</option>
+            <option>SM</option>
+            <option>VM</option>
+          </select>
+        </div>
+        <div className="col-span-3 md:col-span-2">
+          <div className="lbl">Verbatim Notes</div>
+          <textarea className="inp h-20" value={row.notes || ""} onChange={e=> setMeta(row.id, 'notes', e.target.value)} placeholder="Key quotes, policy lines, directives, etc." />
+        </div>
+      </div>
     </div>
-    
-    <!-- Recognition Sheet Modal -->
-    <div id="recognition-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
-        <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col border border-gray-700">
-            <h2 class="text-2xl font-bold text-teal-300 p-6 border-b border-gray-700">Recognition Sheet</h2>
-            <div class="p-6 overflow-y-auto flex-grow">
-                <form id="add-recognition-form" class="flex flex-col sm:flex-row items-center gap-4 mb-6">
-                    <select id="recognition-delegate" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-teal-500 focus:outline-none transition"></select>
-                    <input type="text" id="recognition-notes" placeholder="Notes (e.g., 'On working paper 1.1')" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-teal-500 focus:outline-none transition" required>
-                    <button type="submit" class="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg transition">Log</button>
-                </form>
-                <div id="recognition-list" class="space-y-3">
-                    <!-- Recognition items will be injected here -->
+  );
+}
+
+function RecognitionTab({ ranked, config, setMeta }) {
+  return (
+    <div className="mt-6 grid gap-4">
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Recognition Sheet</h2>
+            <p className="text-sm opacity-70">Assign awards or auto‑fill from ranking.</p>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn" onClick={()=> autoAssignAwards(ranked, setMeta)}>Auto‑assign</button>
+            <button className="btn" onClick={()=> clearAwards(ranked, setMeta)}>Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {Object.entries(groupBy(ranked, r => r.award || "Unassigned")).map(([award, list]) => (
+          <div className="card" key={award}>
+            <div className="font-semibold mb-2">{award}</div>
+            <table className="tbl">
+              <thead><tr><th className="w-14">S.NO</th><th>Portfolio</th><th className="w-24 text-right">Score</th></tr></thead>
+              <tbody>
+                {list.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.sno}</td>
+                    <td>{r.portfolio}</td>
+                    <td className="text-right">{r.calc.total.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NotesTab({ rows, setMeta }) {
+  return (
+    <div className="mt-6 grid gap-4">
+      {rows.map(r => (
+        <div className="card" key={r.id}>
+          <div className="flex items-center gap-3 mb-2"><div className="font-semibold">{r.sno}. {r.portfolio}</div><div className="ml-auto text-sm opacity-70">Score: {r.calc.total.toFixed(2)}</div></div>
+          <textarea className="inp h-28" value={r.notes || ""} onChange={e=> setMeta(r.id, 'notes', e.target.value)} placeholder="Verbatim / directives / highlights" />
+        </div>
+      ))}
+      {rows.length===0 && <p className="text-sm opacity-70">No delegates selected.</p>}
+    </div>
+  );
+}
+
+function SettingsTab({ config, setConfig }) {
+  const [local, setLocal] = useState(JSON.parse(JSON.stringify(config)));
+  useEffect(()=> setLocal(JSON.parse(JSON.stringify(config))), [config]);
+
+  const updateField = (path, updater) => {
+    const draft = JSON.parse(JSON.stringify(local));
+    updater(draft);
+    setLocal(draft);
+  };
+
+  const addSpeechField = (si) => updateField([], d => {
+    d.scoring.speeches[si].fields.push({ key: uid(), label: "New", max: 1 });
+  });
+  const addSpeech = () => updateField([], d => {
+    d.scoring.speeches.push({ name: `Speech ${d.scoring.speeches.length+1}`, fields: [] });
+  });
+
+  const addParticipation = () => updateField([], d => { d.scoring.participation.push({ key: uid(), label: "New (x1)", max: 999, weight: 1 }); });
+  const addExtra = () => updateField([], d => { d.scoring.extras.push({ key: uid(), label: "New (/5)", max: 5 }); });
+
+  const save = () => setConfig(local);
+
+  return (
+    <div className="mt-6 grid gap-4">
+      <div className="card">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="lbl">Committee name</label>
+            <input className="inp" value={local.committee} onChange={e=> updateField([], d => { d.committee = e.target.value; })} />
+            <div className="mt-6">
+              <div className="font-semibold mb-2">Speeches</div>
+              {local.scoring.speeches.map((s, si) => (
+                <div className="subcard" key={si}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <input className="inp" value={s.name} onChange={e=> updateField([], d => { d.scoring.speeches[si].name = e.target.value; })} />
+                    <button className="icon" title="Add field" onClick={()=> addSpeechField(si)}>＋</button>
+                    <button className="icon danger" title="Remove speech" onClick={()=> updateField([], d => { d.scoring.speeches.splice(si,1); })}>×</button>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-2">
+                    {s.fields.map((f, fi) => (
+                      <div key={fi} className="flex gap-2">
+                        <input className="inp flex-1" value={f.label} onChange={e=> updateField([], d => { d.scoring.speeches[si].fields[fi].label = e.target.value; })} />
+                        <input className="inp w-24" type="number" value={f.max} onChange={e=> updateField([], d => { d.scoring.speeches[si].fields[fi].max = Number(e.target.value); })} />
+                        <button className="icon danger" onClick={()=> updateField([], d => { d.scoring.speeches[si].fields.splice(fi,1); })}>×</button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ))}
+              <button className="btn" onClick={addSpeech}>+ Add Speech</button>
             </div>
-            <div class="p-6 border-t border-gray-700 text-right">
-                <button id="close-recognition-modal-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition">Close</button>
+          </div>
+
+          <div>
+            <div className="font-semibold mb-2">Participation</div>
+            <div className="grid gap-2">
+              {local.scoring.participation.map((p, pi) => (
+                <div key={pi} className="grid grid-cols-12 gap-2 items-center">
+                  <input className="inp col-span-7" value={p.label} onChange={e=> updateField([], d => { d.scoring.participation[pi].label = e.target.value; })} />
+                  <input className="inp col-span-2" type="number" value={p.weight || 1} onChange={e=> updateField([], d => { d.scoring.participation[pi].weight = Number(e.target.value); })} />
+                  <input className="inp col-span-2" type="number" value={p.max} onChange={e=> updateField([], d => { d.scoring.participation[pi].max = Number(e.target.value); })} />
+                  <button className="icon danger col-span-1" onClick={()=> updateField([], d => { d.scoring.participation.splice(pi,1); })}>×</button>
+                </div>
+              ))}
+              <button className="btn w-fit" onClick={addParticipation}>+ Add Participation</button>
             </div>
+
+            <div className="mt-6 font-semibold mb-2">Extras</div>
+            <div className="grid gap-2">
+              {local.scoring.extras.map((e, ei) => (
+                <div key={ei} className="grid grid-cols-12 gap-2 items-center">
+                  <input className="inp col-span-7" value={e.label} onChange={ev=> updateField([], d => { d.scoring.extras[ei].label = ev.target.value; })} />
+                  <label className="col-span-2 text-sm flex items-center gap-2"><input type="checkbox" checked={!!e.perItem} onChange={ev=> updateField([], d => { d.scoring.extras[ei].perItem = ev.target.checked ? (e.perItem || 1) : undefined; })}/> per‑item?</label>
+                  {e.perItem ? (
+                    <input className="inp col-span-2" type="number" value={e.perItem} onChange={ev=> updateField([], d => { d.scoring.extras[ei].perItem = Number(ev.target.value); })} />
+                  ) : (
+                    <input className="inp col-span-2" type="number" value={e.max || 0} onChange={ev=> updateField([], d => { d.scoring.extras[ei].max = Number(ev.target.value); })} />
+                  )}
+                  <button className="icon danger col-span-1" onClick={()=> updateField([], d => { d.scoring.extras.splice(ei,1); })}>×</button>
+                </div>
+              ))}
+              <button className="btn w-fit" onClick={addExtra}>+ Add Extra</button>
+            </div>
+
+            <div className="mt-6">
+              <div className="font-semibold mb-2">Awards (labels only; scoring is ranking‑based)</div>
+              <AwardEditor local={local} setLocal={setLocal} />
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button className="btn" onClick={save}>Save Settings</button>
+            </div>
+          </div>
         </div>
+      </div>
     </div>
+  );
+}
 
-    <!-- Custom Confirm Modal -->
-    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
-        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm text-center border border-gray-700">
-            <h3 id="confirm-title" class="text-lg font-bold text-white mb-4">Are you sure?</h3>
-            <p id="confirm-text" class="text-gray-300 mb-6">This action cannot be undone.</p>
-            <div class="flex justify-center gap-4">
-                <button id="confirm-cancel" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg">Cancel</button>
-                <button id="confirm-ok" class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg">Delete</button>
-            </div>
+function AwardEditor({ local, setLocal }) {
+  const add = () => setLocal(d => ({...d, awards: [...d.awards, { key: uid(), label: "Award", count: 1 }]}));
+  const update = (i, patch) => setLocal(d => ({...d, awards: d.awards.map((a,idx)=> idx===i ? {...a, ...patch} : a)}));
+  const remove = (i) => setLocal(d => ({...d, awards: d.awards.filter((_,idx)=> idx!==i)}));
+  return (
+    <div className="grid gap-2">
+      {local.awards.map((a,i)=> (
+        <div key={i} className="grid grid-cols-12 gap-2 items-center">
+          <input className="inp col-span-7" value={a.label} onChange={e=> update(i, { label: e.target.value })} />
+          <input className="inp col-span-3" value={a.key} onChange={e=> update(i, { key: e.target.value })} />
+          <input className="inp col-span-1" type="number" value={a.count} onChange={e=> update(i, { count: Number(e.target.value) })} />
+          <button className="icon danger col-span-1" onClick={()=> remove(i)}>×</button>
         </div>
+      ))}
+      <button className="btn w-fit" onClick={add}>+ Add Award</button>
     </div>
+  );
+}
 
+function TableView({ rows, config, setScore, setCount }) {
+  const header = ["S.NO", "Portfolio",
+    ...config.scoring.speeches.flatMap(s => s.fields.map(f => `${s.name} – ${f.label}`)),
+    ...config.scoring.participation.map(p => p.label),
+    ...config.scoring.extras.map(e => e.label),
+    "TOTAL"
+  ];
+  return (
+    <div className="mt-6 card overflow-x-auto">
+      <table className="tbl min-w-[900px]">
+        <thead><tr>{header.map((h,i)=>(<th key={i}>{h}</th>))}</tr></thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.id}>
+              <td className="w-16">{r.sno}</td>
+              <td className="w-56">{r.portfolio}</td>
+              {config.scoring.speeches.map(s => s.fields.map(f => (
+                <td key={f.key}><CellNumber value={r.scores[f.key] ?? ""} onChange={v=> setScore(r.id, f.key, v)} /></td>
+              )))}
+              {config.scoring.participation.map(p => (
+                <td key={p.key}><CellNumber integer value={r.counts[p.key] ?? ""} onChange={v=> setCount(r.id, p.key, v)} /></td>
+              ))}
+              {config.scoring.extras.map(e => (
+                <td key={e.key}>
+                  {e.perItem ? <CellNumber integer value={r.counts[e.key] ?? ""} onChange={v=> setCount(r.id, e.key, v)} /> : <CellNumber value={r.scores[e.key] ?? ""} onChange={v=> setScore(r.id, e.key, v)} />}
+                </td>
+              ))}
+              <td className="text-right font-semibold">{r.calc.total.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
-    <!-- Firebase and App Logic -->
-    <script type="module">
-        // Firebase Imports
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, setLogLevel, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+function NumberInput({ label, value, onChange, max, integer }) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="opacity-80">{label}</span>
+      <input className="inp" type="number" step={integer?1:0.01} value={value} onChange={e=> onChange(numberOrBlank(e.target.value, integer))} {...(max!=null?{max}:{})} />
+    </label>
+  );
+}
 
-        // --- CONFIG AND INITIALIZATION ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'mun-marker-app';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", projectId: "YOUR_PROJECT_ID" };
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        setLogLevel('debug');
+function CellNumber({ value, onChange, integer }) {
+  return <input className="inp w-24" type="number" step={integer?1:0.01} value={value} onChange={e=> onChange(numberOrBlank(e.target.value, integer))} />;
+}
 
-        const delegatesCollectionRef = collection(db, `/artifacts/${appId}/public/data/delegates`);
-        const recognitionsCollectionRef = collection(db, `/artifacts/${appId}/public/data/recognitions`);
-        let allDelegatesCache = []; // Cache for various uses like dropdowns and export
+function numberOrBlank(v, integer) {
+  if (v === "") return "";
+  const n = integer ? parseInt(v,10) : parseFloat(v);
+  return isNaN(n) ? "" : n;
+}
 
-        // --- AUTHENTICATION ---
-        let currentUserId = null;
-        const authStatusEl = document.getElementById('auth-status');
+function autoAssignAwards(ranked, setMeta) {
+  // Clear existing awards
+  ranked.forEach(r => setMeta(r.id, 'award', ''));
+  // Simple template: top 1 BD, next 1 HC, next 3 SM, next 2 VM
+  const plan = [
+    { label: 'BD', count: 1 },
+    { label: 'HC', count: 1 },
+    { label: 'SM', count: 3 },
+    { label: 'VM', count: 2 },
+  ];
+  let i = 0;
+  plan.forEach(block => {
+    for (let k = 0; k < block.count && i < ranked.length; k++, i++) {
+      setMeta(ranked[i].id, 'award', block.label);
+    }
+  });
+}
+function clearAwards(ranked, setMeta) { ranked.forEach(r => setMeta(r.id, 'award', '')); }
 
-        onAuthStateChanged(auth, user => {
-            if (user) {
-                currentUserId = user.uid;
-                authStatusEl.textContent = `Connected as User: ${currentUserId.substring(0, 8)}...`;
-                authStatusEl.classList.add('text-green-400');
-                listenForDelegates();
-                listenForRecognitions();
-            } else {
-                currentUserId = null;
-                authStatusEl.textContent = 'Not connected. Please refresh.';
-                authStatusEl.classList.add('text-red-400');
-            }
-        });
+function groupBy(arr, fn) {
+  return arr.reduce((acc, x) => { const k = fn(x); (acc[k] ||= []).push(x); return acc; }, {});
+}
+function clamp(n, a, b) { return Math.max(a, Math.min(b, Number(n)||0)); }
+function round2(n) { return Math.round(n * 100) / 100; }
 
-        async function signIn() {
-            try {
-                if (initialAuthToken) { await signInWithCustomToken(auth, initialAuthToken); } 
-                else { await signInAnonymously(auth); }
-            } catch (error) {
-                console.error("Authentication failed:", error);
-                authStatusEl.textContent = 'Authentication Failed.';
-            }
-        }
-        signIn();
-
-        // --- DOM ELEMENTS ---
-        const delegateList = document.getElementById('delegate-list');
-        const addDelegateForm = document.getElementById('add-delegate-form');
-        const delegateNameInput = document.getElementById('delegate-name');
-        const loadingSpinner = document.getElementById('loading-spinner');
-        const exportBtn = document.getElementById('export-btn');
-        const verbatimNotes = document.getElementById('verbatim-notes');
-
-        // Modal Elements
-        const modal = document.getElementById('marking-modal');
-        const modalDelegateName = document.getElementById('modal-delegate-name');
-        const modalTotalScore = document.getElementById('modal-total-score');
-        const markingForm = document.getElementById('marking-form');
-        const delegateIdInput = document.getElementById('modal-delegate-id');
-        const closeModalBtn = document.getElementById('close-modal-btn');
-        const saveChangesBtn = document.getElementById('save-changes-btn');
-        const deleteDelegateBtn = document.getElementById('delete-delegate-btn');
-        
-        // Recognition Modal Elements
-        const recognitionModal = document.getElementById('recognition-modal');
-        const openRecognitionBtn = document.getElementById('recognition-sheet-btn');
-        const closeRecognitionBtn = document.getElementById('close-recognition-modal-btn');
-        const recognitionForm = document.getElementById('add-recognition-form');
-        const recognitionDelegateSelect = document.getElementById('recognition-delegate');
-        const recognitionNotesInput = document.getElementById('recognition-notes');
-        const recognitionList = document.getElementById('recognition-list');
-
-        // Confirm Modal Elements
-        const confirmModal = document.getElementById('confirm-modal');
-        const confirmOkBtn = document.getElementById('confirm-ok');
-        const confirmCancelBtn = document.getElementById('confirm-cancel');
-        const confirmTitle = document.getElementById('confirm-title');
-        const confirmText = document.getElementById('confirm-text');
-
-
-        // --- CORE LOGIC ---
-
-        const calculateTotalScore = (data) => {
-            let total = 0;
-            const fields = ['s1_research', 's1_analysis', 's1_impact', 's2_research', 's2_analysis', 's2_impact', 's3_research', 's3_analysis', 's3_impact', 'poo', 'poi', 'replies', 'diplomatic_courtesy', 'lobbying', 'chits_substantive', 'chits_reply', 'documentation', 'final_doc'];
-            fields.forEach(field => { total += parseFloat(data[field] || 0); });
-            return total;
-        };
-
-        const renderDelegates = (delegates) => {
-            delegates.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
-            
-            delegateList.innerHTML = '';
-            recognitionDelegateSelect.innerHTML = '<option value="">Select Delegate...</option>';
-            if (delegates.length === 0) {
-                 delegateList.innerHTML = `<div class="text-center py-10 bg-gray-800 rounded-lg border border-gray-700"><p class="text-gray-400">No delegates added yet. Add one to get started!</p></div>`;
-                 return;
-            }
-
-            delegates.forEach((delegate, index) => {
-                const isFirst = index === 0;
-                const card = document.createElement('div');
-                card.className = `bg-gray-800 p-4 rounded-xl shadow-md flex items-center justify-between border ${isFirst ? 'border-amber-400 shadow-amber-400/20' : 'border-gray-700'} transform hover:scale-[1.02] transition-transform`;
-                card.innerHTML = `<div class="flex items-center gap-4"><span class="text-xl font-bold ${isFirst ? 'text-amber-400' : 'text-indigo-400'}">${index + 1}</span><div><h3 class="text-lg font-bold text-gray-100">${delegate.name} ${isFirst ? '👑' : ''}</h3><p class="text-sm text-gray-400">Delegate</p></div></div><div class="flex items-center gap-4"><span class="text-2xl font-orbitron font-bold text-green-400">${(delegate.totalScore || 0).toFixed(2)}</span><button data-id="${delegate.id}" class="edit-btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition">Mark</button></div>`;
-                delegateList.appendChild(card);
-                
-                // Populate recognition dropdown
-                const option = document.createElement('option');
-                option.value = delegate.id;
-                option.textContent = delegate.name;
-                recognitionDelegateSelect.appendChild(option);
-            });
-        };
-
-        const listenForDelegates = () => {
-            onSnapshot(delegatesCollectionRef, (snapshot) => {
-                loadingSpinner.style.display = 'none';
-                const delegates = [];
-                snapshot.forEach((doc) => {
-                    delegates.push({ id: doc.id, ...doc.data() });
-                });
-                allDelegatesCache = delegates; // Update cache
-                renderDelegates(delegates);
-            }, (error) => {
-                console.error("Error fetching delegates:", error);
-                loadingSpinner.innerHTML = '<p class="text-red-400">Error loading data. Please check console.</p>';
-            });
-        };
-
-        addDelegateForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const delegateName = delegateNameInput.value.trim();
-            if (delegateName) {
-                try {
-                    await addDoc(delegatesCollectionRef, {
-                        name: delegateName, totalScore: 0, verbatim: "",
-                        s1_research: 0, s1_analysis: 0, s1_impact: 0, s2_research: 0, s2_analysis: 0, s2_impact: 0, s3_research: 0, s3_analysis: 0, s3_impact: 0,
-                        poo: 0, poi: 0, replies: 0, diplomatic_courtesy: 0, lobbying: 0, chits_substantive: 0, chits_reply: 0, documentation: 0, final_doc: 0,
-                    });
-                    delegateNameInput.value = '';
-                } catch (error) { console.error("Error adding delegate: ", error); }
-            }
-        });
-
-        // --- MODAL HANDLING ---
-        delegateList.addEventListener('click', (e) => {
-            if (e.target.classList.contains('edit-btn')) {
-                const id = e.target.dataset.id;
-                const delegateData = allDelegatesCache.find(d => d.id === id);
-                if (delegateData) {
-                    modalDelegateName.textContent = delegateData.name;
-                    delegateIdInput.value = id;
-                    for (const key in delegateData) {
-                        if (markingForm.elements[key]) {
-                            markingForm.elements[key].value = delegateData[key] || 0;
-                        }
-                    }
-                    verbatimNotes.value = delegateData.verbatim || "";
-                    modalTotalScore.textContent = (delegateData.totalScore || 0).toFixed(2);
-                    modal.classList.remove('hidden');
-                }
-            }
-        });
-        
-        closeModalBtn.addEventListener('click', () => modal.classList.add('hidden'));
-        
-        markingForm.addEventListener('input', () => {
-            const formData = new FormData(markingForm);
-            const data = Object.fromEntries(formData.entries());
-            const total = calculateTotalScore(data);
-            modalTotalScore.textContent = total.toFixed(2);
-        });
-
-        saveChangesBtn.addEventListener('click', async () => {
-            const id = delegateIdInput.value;
-            if (!id) return;
-            const formData = new FormData(markingForm);
-            const data = Object.fromEntries(formData.entries());
-            const totalScore = calculateTotalScore(data);
-            const updatedData = { verbatim: verbatimNotes.value, totalScore };
-            for (const key in data) { updatedData[key] = parseFloat(data[key] || 0); }
-            
-            try {
-                await updateDoc(doc(delegatesCollectionRef, id), updatedData);
-                modal.classList.add('hidden');
-            } catch (error) { console.error("Error updating document: ", error); }
-        });
-
-        // --- CUSTOM CONFIRMATION ---
-        let confirmCallback = null;
-        function showConfirm(title, text, callback) {
-            confirmTitle.textContent = title;
-            confirmText.textContent = text;
-            confirmCallback = callback;
-            confirmModal.classList.remove('hidden');
-        }
-        confirmOkBtn.addEventListener('click', () => {
-            if (confirmCallback) confirmCallback(true);
-            confirmModal.classList.add('hidden');
-        });
-        confirmCancelBtn.addEventListener('click', () => {
-            if (confirmCallback) confirmCallback(false);
-            confirmModal.classList.add('hidden');
-        });
-
-        // --- DELETE DELEGATE ---
-        deleteDelegateBtn.addEventListener('click', () => {
-            const id = delegateIdInput.value;
-            const delegateName = modalDelegateName.textContent;
-            showConfirm(`Delete ${delegateName}?`, 'This will permanently remove the delegate and all their scores.', async (confirmed) => {
-                if (confirmed && id) {
-                    try {
-                        await deleteDoc(doc(delegatesCollectionRef, id));
-                        modal.classList.add('hidden');
-                    } catch (error) { console.error("Error deleting delegate: ", error); }
-                }
-            });
-        });
-
-        // --- RECOGNITION SHEET ---
-        openRecognitionBtn.addEventListener('click', () => recognitionModal.classList.remove('hidden'));
-        closeRecognitionBtn.addEventListener('click', () => recognitionModal.classList.add('hidden'));
-
-        recognitionForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const delegateId = recognitionDelegateSelect.value;
-            const notes = recognitionNotesInput.value.trim();
-            const delegateName = recognitionDelegateSelect.options[recognitionDelegateSelect.selectedIndex].text;
-
-            if (delegateId && notes) {
-                try {
-                    await addDoc(recognitionsCollectionRef, {
-                        delegateId, delegateName, notes, createdAt: serverTimestamp()
-                    });
-                    recognitionNotesInput.value = '';
-                    recognitionDelegateSelect.value = '';
-                } catch (error) { console.error("Error logging recognition: ", error); }
-            }
-        });
-
-        const listenForRecognitions = () => {
-            onSnapshot(recognitionsCollectionRef, (snapshot) => {
-                const recognitions = [];
-                snapshot.forEach(doc => recognitions.push({ id: doc.id, ...doc.data() }));
-                // Sort by timestamp, newest first
-                recognitions.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                
-                recognitionList.innerHTML = '';
-                if (recognitions.length === 0) {
-                    recognitionList.innerHTML = `<p class="text-gray-400 text-center">No recognitions logged yet.</p>`;
-                    return;
-                }
-                recognitions.forEach(rec => {
-                    const item = document.createElement('div');
-                    item.className = 'bg-gray-700/50 p-3 rounded-lg flex justify-between items-start';
-                    const timestamp = rec.createdAt ? new Date(rec.createdAt.seconds * 1000).toLocaleTimeString() : '...';
-                    item.innerHTML = `<div><p class="font-bold text-teal-300">${rec.delegateName}</p><p class="text-sm text-gray-300">${rec.notes}</p></div><span class="text-xs text-gray-500">${timestamp}</span>`;
-                    recognitionList.appendChild(item);
-                });
-            });
-        };
-
-        // --- EXCEL EXPORT ---
-        exportBtn.addEventListener('click', () => {
-            const delegates = [...allDelegatesCache].sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
-            if (delegates.length === 0) {
-                alert("No delegates to export."); // Using alert here for simplicity, can be replaced by custom modal
-                return;
-            }
-
-            const header1 = [",", ",", "SPEECH 1", "SPEECH 1", "SPEECH 1", "SPEECH 2", "SPEECH 2", "SPEECH 2", "SPEECH 3", "SPEECH 3", "SPEECH 3", "SPEECHES TOTAL", "POINTS", "POINTS", "POINTS", "VERBATIM TOTAL", "DOCUMENTATION", "DIPLOMATIC COURTESY", "LOBBYING", "CHITS", "CHITS", "FINAL DOC", "TOTAL", "AWARD"];
-            const header2 = ["S.NO", "PORTFOLIO", "RESEARCH(3)", "ANALYSIS(4)", "IMPACT(3)", "RESEARCH(3)", "ANALYSIS(4)", "IMPACT(3)", "RESEARCH(3)", "ANALYSIS(4)", "IMPACT(3)", "TOTAL(30)", "POO(x/1 each)", "POI(x/1 each)", "REPLIES(x/1 each)", "", "(x/5 each)", "(X5)", "(x/5)", "SUBSTANTIVE(x/5 each)", "REPLY n poi(x/1 each)", "(25)", "TOTAL", "FINAL"];
-
-            let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += header1.join(",") + "\r\n";
-            csvContent += header2.join(",") + "\r\n";
-
-            delegates.forEach((del, index) => {
-                const sTotal = (del.s1_research || 0) + (del.s1_analysis || 0) + (del.s1_impact || 0) + (del.s2_research || 0) + (del.s2_analysis || 0) + (del.s2_impact || 0) + (del.s3_research || 0) + (del.s3_analysis || 0) + (del.s3_impact || 0);
-                const vTotal = sTotal + (del.poo || 0) + (del.poi || 0) + (del.replies || 0);
-                const row = [
-                    index + 1,
-                    `"${del.name.replace(/"/g, '""')}"`,
-                    del.s1_research || 0, del.s1_analysis || 0, del.s1_impact || 0,
-                    del.s2_research || 0, del.s2_analysis || 0, del.s2_impact || 0,
-                    del.s3_research || 0, del.s3_analysis || 0, del.s3_impact || 0,
-                    sTotal.toFixed(2),
-                    del.poo || 0, del.poi || 0, del.replies || 0,
-                    vTotal.toFixed(2),
-                    del.documentation || 0,
-                    del.diplomatic_courtesy || 0,
-                    del.lobbying || 0,
-                    del.chits_substantive || 0,
-                    del.chits_reply || 0,
-                    del.final_doc || 0,
-                    (del.totalScore || 0).toFixed(2),
-                    "" // Placeholder for Award
-                ];
-                csvContent += row.join(",") + "\r\n";
-            });
-
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "mun_marksheet.csv");
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        });
-
-    </script>
-</body>
-</html>
+// --- Minimal CSS (Tailwind‑like utility vibes, no external dep) -----------
+const css = `
+:root { color-scheme: dark light; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.btn { padding: 0.5rem 0.8rem; border: 1px solid #444; border-radius: 0.6rem; background: transparent; cursor: pointer; }
+.btn:hover { background: rgba(127,127,127,.12); }
+.btn.danger { border-color: #a33; color: #f66; }
+.icon { width: 2rem; height: 2rem; border: 1px solid #444; border-radius: 0.5rem; background: transparent; cursor: pointer; display: grid; place-items: center; }
+.icon:hover { background: rgba(127,127,127,.12); }
+.icon.danger { border-color: #a33; color: #f66; }
+.inp { width: 100%; padding: 0.5rem 0.7rem; border: 1px solid #444; border-radius: 0.6rem; background: transparent; }
+.lbl { font-size: 0.8rem; opacity: 0.7; margin-bottom: 0.3rem; }
+.card { border: 1px solid #333; border-radius: 1rem; padding: 1rem; background: rgba(127,127,127,.06); }
+.subcard { border: 1px dashed #444; border-radius: 0.8rem; padding: 0.75rem; }
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th, .tbl td { padding: 0.5rem; border-bottom: 1px solid #333; text-align: left; }
+.tab { padding: 0.45rem 0.8rem; border: 1px solid #333; border-radius: 0.6rem; background: transparent; }
+.tab-active { background: rgba(127,127,127,.15); }
+.val { font-weight: 700; font-variant-numeric: tabular-nums; }
+`;
