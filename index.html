@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MUN Real-Time Marksheet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+        }
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        /* Custom scrollbar for a better look */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937; /* bg-gray-800 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4f46e5; /* bg-indigo-600 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6366f1; /* bg-indigo-500 */
+        }
+        /* Style for number inputs */
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        /* Transition for delegate list sorting */
+        #delegate-list > div {
+            transition: all 0.5s ease-in-out;
+        }
+        /* Watermark Style */
+        .watermark {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="text-gray-200">
+
+    <!-- Watermark -->
+    <div class="watermark font-orbitron">A Sameer Jhamb Marking Scheme</div>
+
+    <!-- Main Container -->
+    <div class="container mx-auto p-4 md:p-6 lg:p-8 max-w-7xl">
+
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold font-orbitron text-indigo-400">MUN Command Center</h1>
+            <p class="text-gray-400 mt-2">Live Delegate Scoring & Leaderboard</p>
+            <div id="auth-status" class="mt-2 text-xs text-gray-500">Connecting...</div>
+        </header>
+        
+        <!-- Controls Section -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-gray-700">
+            <div class="flex flex-col md:flex-row gap-4 justify-between">
+                <!-- Add Delegate Form -->
+                <div class="flex-grow">
+                    <h2 class="text-2xl font-bold mb-4 text-indigo-300">Add New Delegate</h2>
+                    <form id="add-delegate-form" class="flex flex-col sm:flex-row items-center gap-4">
+                        <input type="text" id="delegate-name" placeholder="Enter Portfolio (e.g., Canada)" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition" required>
+                        <button type="submit" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg transition-transform transform hover:scale-105">
+                            Add Delegate
+                        </button>
+                    </form>
+                </div>
+                <!-- Action Buttons -->
+                <div class="flex-shrink-0">
+                     <h2 class="text-2xl font-bold mb-4 text-indigo-300">Tools</h2>
+                     <div class="flex flex-col sm:flex-row gap-4">
+                        <button id="recognition-sheet-btn" class="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg transition">Recognition Sheet</button>
+                        <button id="export-btn" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition">Export to Excel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Delegate List / Leaderboard -->
+        <div id="delegate-list" class="space-y-4">
+            <!-- Delegate cards will be injected here by JavaScript -->
+        </div>
+         <div id="loading-spinner" class="text-center py-10">
+            <svg class="animate-spin h-8 w-8 text-indigo-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-gray-400">Loading Delegates...</p>
+        </div>
+
+    </div>
+
+    <!-- Marking Modal -->
+    <div id="marking-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col border border-gray-700">
+            <div class="p-6 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-indigo-300">Marking: <span id="modal-delegate-name"></span></h2>
+                 <div class="text-right">
+                    <span class="text-3xl font-orbitron text-green-400" id="modal-total-score">0.00</span>
+                    <p class="text-sm text-gray-400">Total Score</p>
+                </div>
+            </div>
+            <div class="p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6">
+                <form id="marking-form" class="flex-grow md:w-2/3">
+                    <input type="hidden" id="modal-delegate-id">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <!-- Speech Columns -->
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                            <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Speech 1</h3>
+                            <div class="space-y-2"><label class="block text-sm">Research (3): <input type="number" step="0.01" name="s1_research" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Analysis (4): <input type="number" step="0.01" name="s1_analysis" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Impact (3): <input type="number" step="0.01" name="s1_impact" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div>
+                        </div>
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                            <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Speech 2</h3>
+                            <div class="space-y-2"><label class="block text-sm">Research (3): <input type="number" step="0.01" name="s2_research" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Analysis (4): <input type="number" step="0.01" name="s2_analysis" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Impact (3): <input type="number" step="0.01" name="s2_impact" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div>
+                        </div>
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                            <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Speech 3</h3>
+                            <div class="space-y-2"><label class="block text-sm">Research (3): <input type="number" step="0.01" name="s3_research" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Analysis (4): <input type="number" step="0.01" name="s3_analysis" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Impact (3): <input type="number" step="0.01" name="s3_impact" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div>
+                        </div>
+                    </div>
+                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <!-- Other Criteria -->
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Interaction</h3><div class="space-y-2"><label class="block text-sm">POO (1): <input type="number" step="0.01" name="poo" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">POI (1): <input type="number" step="0.01" name="poi" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Replies (1): <input type="number" step="0.01" name="replies" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Diplomacy</h3><div class="space-y-2"><label class="block text-sm">Courtesy (5): <input type="number" step="0.01" name="diplomatic_courtesy" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Lobbying (5): <input type="number" step="0.01" name="lobbying" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Chits</h3><div class="space-y-2"><label class="block text-sm">Substantive (5): <input type="number" step="0.01" name="chits_substantive" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Reply/POI (1): <input type="number" step="0.01" name="chits_reply" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
+                        <div class="bg-gray-900/50 p-4 rounded-lg border border-gray-700"><h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Documentation</h3><div class="space-y-2"><label class="block text-sm">Drafting (5): <input type="number" step="0.01" name="documentation" class="w-full bg-gray-700 mt-1 p-2 rounded"></label><label class="block text-sm">Final Docs (25): <input type="number" step="0.01" name="final_doc" class="w-full bg-gray-700 mt-1 p-2 rounded"></label></div></div>
+                    </div>
+                </form>
+                <div class="md:w-1/3 flex flex-col bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                    <h3 class="font-semibold text-lg mb-3 text-center text-indigo-400">Verbatim Notes</h3>
+                    <textarea id="verbatim-notes" class="w-full flex-grow bg-gray-700 p-2 rounded text-sm" placeholder="Type verbatim notes here..."></textarea>
+                </div>
+            </div>
+            <div class="p-6 border-t border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-4">
+                 <button id="delete-delegate-btn" class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition">Delete Delegate</button>
+                <div>
+                    <button id="close-modal-btn" class="w-full sm:w-auto bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition mr-2">Close</button>
+                    <button id="save-changes-btn" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recognition Sheet Modal -->
+    <div id="recognition-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col border border-gray-700">
+            <h2 class="text-2xl font-bold text-teal-300 p-6 border-b border-gray-700">Recognition Sheet</h2>
+            <div class="p-6 overflow-y-auto flex-grow">
+                <form id="add-recognition-form" class="flex flex-col sm:flex-row items-center gap-4 mb-6">
+                    <select id="recognition-delegate" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-teal-500 focus:outline-none transition"></select>
+                    <input type="text" id="recognition-notes" placeholder="Notes (e.g., 'On working paper 1.1')" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-teal-500 focus:outline-none transition" required>
+                    <button type="submit" class="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-6 rounded-lg transition">Log</button>
+                </form>
+                <div id="recognition-list" class="space-y-3">
+                    <!-- Recognition items will be injected here -->
+                </div>
+            </div>
+            <div class="p-6 border-t border-gray-700 text-right">
+                <button id="close-recognition-modal-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm text-center border border-gray-700">
+            <h3 id="confirm-title" class="text-lg font-bold text-white mb-4">Are you sure?</h3>
+            <p id="confirm-text" class="text-gray-300 mb-6">This action cannot be undone.</p>
+            <div class="flex justify-center gap-4">
+                <button id="confirm-cancel" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-lg">Cancel</button>
+                <button id="confirm-ok" class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg">Delete</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase and App Logic -->
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, setLogLevel, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIG AND INITIALIZATION ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'mun-marker-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", projectId: "YOUR_PROJECT_ID" };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        setLogLevel('debug');
+
+        const delegatesCollectionRef = collection(db, `/artifacts/${appId}/public/data/delegates`);
+        const recognitionsCollectionRef = collection(db, `/artifacts/${appId}/public/data/recognitions`);
+        let allDelegatesCache = []; // Cache for various uses like dropdowns and export
+
+        // --- AUTHENTICATION ---
+        let currentUserId = null;
+        const authStatusEl = document.getElementById('auth-status');
+
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                currentUserId = user.uid;
+                authStatusEl.textContent = `Connected as User: ${currentUserId.substring(0, 8)}...`;
+                authStatusEl.classList.add('text-green-400');
+                listenForDelegates();
+                listenForRecognitions();
+            } else {
+                currentUserId = null;
+                authStatusEl.textContent = 'Not connected. Please refresh.';
+                authStatusEl.classList.add('text-red-400');
+            }
+        });
+
+        async function signIn() {
+            try {
+                if (initialAuthToken) { await signInWithCustomToken(auth, initialAuthToken); } 
+                else { await signInAnonymously(auth); }
+            } catch (error) {
+                console.error("Authentication failed:", error);
+                authStatusEl.textContent = 'Authentication Failed.';
+            }
+        }
+        signIn();
+
+        // --- DOM ELEMENTS ---
+        const delegateList = document.getElementById('delegate-list');
+        const addDelegateForm = document.getElementById('add-delegate-form');
+        const delegateNameInput = document.getElementById('delegate-name');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const exportBtn = document.getElementById('export-btn');
+        const verbatimNotes = document.getElementById('verbatim-notes');
+
+        // Modal Elements
+        const modal = document.getElementById('marking-modal');
+        const modalDelegateName = document.getElementById('modal-delegate-name');
+        const modalTotalScore = document.getElementById('modal-total-score');
+        const markingForm = document.getElementById('marking-form');
+        const delegateIdInput = document.getElementById('modal-delegate-id');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const saveChangesBtn = document.getElementById('save-changes-btn');
+        const deleteDelegateBtn = document.getElementById('delete-delegate-btn');
+        
+        // Recognition Modal Elements
+        const recognitionModal = document.getElementById('recognition-modal');
+        const openRecognitionBtn = document.getElementById('recognition-sheet-btn');
+        const closeRecognitionBtn = document.getElementById('close-recognition-modal-btn');
+        const recognitionForm = document.getElementById('add-recognition-form');
+        const recognitionDelegateSelect = document.getElementById('recognition-delegate');
+        const recognitionNotesInput = document.getElementById('recognition-notes');
+        const recognitionList = document.getElementById('recognition-list');
+
+        // Confirm Modal Elements
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmOkBtn = document.getElementById('confirm-ok');
+        const confirmCancelBtn = document.getElementById('confirm-cancel');
+        const confirmTitle = document.getElementById('confirm-title');
+        const confirmText = document.getElementById('confirm-text');
+
+
+        // --- CORE LOGIC ---
+
+        const calculateTotalScore = (data) => {
+            let total = 0;
+            const fields = ['s1_research', 's1_analysis', 's1_impact', 's2_research', 's2_analysis', 's2_impact', 's3_research', 's3_analysis', 's3_impact', 'poo', 'poi', 'replies', 'diplomatic_courtesy', 'lobbying', 'chits_substantive', 'chits_reply', 'documentation', 'final_doc'];
+            fields.forEach(field => { total += parseFloat(data[field] || 0); });
+            return total;
+        };
+
+        const renderDelegates = (delegates) => {
+            delegates.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
+            
+            delegateList.innerHTML = '';
+            recognitionDelegateSelect.innerHTML = '<option value="">Select Delegate...</option>';
+            if (delegates.length === 0) {
+                 delegateList.innerHTML = `<div class="text-center py-10 bg-gray-800 rounded-lg border border-gray-700"><p class="text-gray-400">No delegates added yet. Add one to get started!</p></div>`;
+                 return;
+            }
+
+            delegates.forEach((delegate, index) => {
+                const isFirst = index === 0;
+                const card = document.createElement('div');
+                card.className = `bg-gray-800 p-4 rounded-xl shadow-md flex items-center justify-between border ${isFirst ? 'border-amber-400 shadow-amber-400/20' : 'border-gray-700'} transform hover:scale-[1.02] transition-transform`;
+                card.innerHTML = `<div class="flex items-center gap-4"><span class="text-xl font-bold ${isFirst ? 'text-amber-400' : 'text-indigo-400'}">${index + 1}</span><div><h3 class="text-lg font-bold text-gray-100">${delegate.name} ${isFirst ? '👑' : ''}</h3><p class="text-sm text-gray-400">Delegate</p></div></div><div class="flex items-center gap-4"><span class="text-2xl font-orbitron font-bold text-green-400">${(delegate.totalScore || 0).toFixed(2)}</span><button data-id="${delegate.id}" class="edit-btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition">Mark</button></div>`;
+                delegateList.appendChild(card);
+                
+                // Populate recognition dropdown
+                const option = document.createElement('option');
+                option.value = delegate.id;
+                option.textContent = delegate.name;
+                recognitionDelegateSelect.appendChild(option);
+            });
+        };
+
+        const listenForDelegates = () => {
+            onSnapshot(delegatesCollectionRef, (snapshot) => {
+                loadingSpinner.style.display = 'none';
+                const delegates = [];
+                snapshot.forEach((doc) => {
+                    delegates.push({ id: doc.id, ...doc.data() });
+                });
+                allDelegatesCache = delegates; // Update cache
+                renderDelegates(delegates);
+            }, (error) => {
+                console.error("Error fetching delegates:", error);
+                loadingSpinner.innerHTML = '<p class="text-red-400">Error loading data. Please check console.</p>';
+            });
+        };
+
+        addDelegateForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const delegateName = delegateNameInput.value.trim();
+            if (delegateName) {
+                try {
+                    await addDoc(delegatesCollectionRef, {
+                        name: delegateName, totalScore: 0, verbatim: "",
+                        s1_research: 0, s1_analysis: 0, s1_impact: 0, s2_research: 0, s2_analysis: 0, s2_impact: 0, s3_research: 0, s3_analysis: 0, s3_impact: 0,
+                        poo: 0, poi: 0, replies: 0, diplomatic_courtesy: 0, lobbying: 0, chits_substantive: 0, chits_reply: 0, documentation: 0, final_doc: 0,
+                    });
+                    delegateNameInput.value = '';
+                } catch (error) { console.error("Error adding delegate: ", error); }
+            }
+        });
+
+        // --- MODAL HANDLING ---
+        delegateList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('edit-btn')) {
+                const id = e.target.dataset.id;
+                const delegateData = allDelegatesCache.find(d => d.id === id);
+                if (delegateData) {
+                    modalDelegateName.textContent = delegateData.name;
+                    delegateIdInput.value = id;
+                    for (const key in delegateData) {
+                        if (markingForm.elements[key]) {
+                            markingForm.elements[key].value = delegateData[key] || 0;
+                        }
+                    }
+                    verbatimNotes.value = delegateData.verbatim || "";
+                    modalTotalScore.textContent = (delegateData.totalScore || 0).toFixed(2);
+                    modal.classList.remove('hidden');
+                }
+            }
+        });
+        
+        closeModalBtn.addEventListener('click', () => modal.classList.add('hidden'));
+        
+        markingForm.addEventListener('input', () => {
+            const formData = new FormData(markingForm);
+            const data = Object.fromEntries(formData.entries());
+            const total = calculateTotalScore(data);
+            modalTotalScore.textContent = total.toFixed(2);
+        });
+
+        saveChangesBtn.addEventListener('click', async () => {
+            const id = delegateIdInput.value;
+            if (!id) return;
+            const formData = new FormData(markingForm);
+            const data = Object.fromEntries(formData.entries());
+            const totalScore = calculateTotalScore(data);
+            const updatedData = { verbatim: verbatimNotes.value, totalScore };
+            for (const key in data) { updatedData[key] = parseFloat(data[key] || 0); }
+            
+            try {
+                await updateDoc(doc(delegatesCollectionRef, id), updatedData);
+                modal.classList.add('hidden');
+            } catch (error) { console.error("Error updating document: ", error); }
+        });
+
+        // --- CUSTOM CONFIRMATION ---
+        let confirmCallback = null;
+        function showConfirm(title, text, callback) {
+            confirmTitle.textContent = title;
+            confirmText.textContent = text;
+            confirmCallback = callback;
+            confirmModal.classList.remove('hidden');
+        }
+        confirmOkBtn.addEventListener('click', () => {
+            if (confirmCallback) confirmCallback(true);
+            confirmModal.classList.add('hidden');
+        });
+        confirmCancelBtn.addEventListener('click', () => {
+            if (confirmCallback) confirmCallback(false);
+            confirmModal.classList.add('hidden');
+        });
+
+        // --- DELETE DELEGATE ---
+        deleteDelegateBtn.addEventListener('click', () => {
+            const id = delegateIdInput.value;
+            const delegateName = modalDelegateName.textContent;
+            showConfirm(`Delete ${delegateName}?`, 'This will permanently remove the delegate and all their scores.', async (confirmed) => {
+                if (confirmed && id) {
+                    try {
+                        await deleteDoc(doc(delegatesCollectionRef, id));
+                        modal.classList.add('hidden');
+                    } catch (error) { console.error("Error deleting delegate: ", error); }
+                }
+            });
+        });
+
+        // --- RECOGNITION SHEET ---
+        openRecognitionBtn.addEventListener('click', () => recognitionModal.classList.remove('hidden'));
+        closeRecognitionBtn.addEventListener('click', () => recognitionModal.classList.add('hidden'));
+
+        recognitionForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const delegateId = recognitionDelegateSelect.value;
+            const notes = recognitionNotesInput.value.trim();
+            const delegateName = recognitionDelegateSelect.options[recognitionDelegateSelect.selectedIndex].text;
+
+            if (delegateId && notes) {
+                try {
+                    await addDoc(recognitionsCollectionRef, {
+                        delegateId, delegateName, notes, createdAt: serverTimestamp()
+                    });
+                    recognitionNotesInput.value = '';
+                    recognitionDelegateSelect.value = '';
+                } catch (error) { console.error("Error logging recognition: ", error); }
+            }
+        });
+
+        const listenForRecognitions = () => {
+            onSnapshot(recognitionsCollectionRef, (snapshot) => {
+                const recognitions = [];
+                snapshot.forEach(doc => recognitions.push({ id: doc.id, ...doc.data() }));
+                // Sort by timestamp, newest first
+                recognitions.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                
+                recognitionList.innerHTML = '';
+                if (recognitions.length === 0) {
+                    recognitionList.innerHTML = `<p class="text-gray-400 text-center">No recognitions logged yet.</p>`;
+                    return;
+                }
+                recognitions.forEach(rec => {
+                    const item = document.createElement('div');
+                    item.className = 'bg-gray-700/50 p-3 rounded-lg flex justify-between items-start';
+                    const timestamp = rec.createdAt ? new Date(rec.createdAt.seconds * 1000).toLocaleTimeString() : '...';
+                    item.innerHTML = `<div><p class="font-bold text-teal-300">${rec.delegateName}</p><p class="text-sm text-gray-300">${rec.notes}</p></div><span class="text-xs text-gray-500">${timestamp}</span>`;
+                    recognitionList.appendChild(item);
+                });
+            });
+        };
+
+        // --- EXCEL EXPORT ---
+        exportBtn.addEventListener('click', () => {
+            const delegates = [...allDelegatesCache].sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
+            if (delegates.length === 0) {
+                alert("No delegates to export."); // Using alert here for simplicity, can be replaced by custom modal
+                return;
+            }
+
+            const header1 = [",", ",", "SPEECH 1", "SPEECH 1", "SPEECH 1", "SPEECH 2", "SPEECH 2", "SPEECH 2", "SPEECH 3", "SPEECH 3", "SPEECH 3", "SPEECHES TOTAL", "POINTS", "POINTS", "POINTS", "VERBATIM TOTAL", "DOCUMENTATION", "DIPLOMATIC COURTESY", "LOBBYING", "CHITS", "CHITS", "FINAL DOC", "TOTAL", "AWARD"];
+            const header2 = ["S.NO", "PORTFOLIO", "RESEARCH(3)", "ANALYSIS(4)", "IMPACT(3)", "RESEARCH(3)", "ANALYSIS(4)", "IMPACT(3)", "RESEARCH(3)", "ANALYSIS(4)", "IMPACT(3)", "TOTAL(30)", "POO(x/1 each)", "POI(x/1 each)", "REPLIES(x/1 each)", "", "(x/5 each)", "(X5)", "(x/5)", "SUBSTANTIVE(x/5 each)", "REPLY n poi(x/1 each)", "(25)", "TOTAL", "FINAL"];
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += header1.join(",") + "\r\n";
+            csvContent += header2.join(",") + "\r\n";
+
+            delegates.forEach((del, index) => {
+                const sTotal = (del.s1_research || 0) + (del.s1_analysis || 0) + (del.s1_impact || 0) + (del.s2_research || 0) + (del.s2_analysis || 0) + (del.s2_impact || 0) + (del.s3_research || 0) + (del.s3_analysis || 0) + (del.s3_impact || 0);
+                const vTotal = sTotal + (del.poo || 0) + (del.poi || 0) + (del.replies || 0);
+                const row = [
+                    index + 1,
+                    `"${del.name.replace(/"/g, '""')}"`,
+                    del.s1_research || 0, del.s1_analysis || 0, del.s1_impact || 0,
+                    del.s2_research || 0, del.s2_analysis || 0, del.s2_impact || 0,
+                    del.s3_research || 0, del.s3_analysis || 0, del.s3_impact || 0,
+                    sTotal.toFixed(2),
+                    del.poo || 0, del.poi || 0, del.replies || 0,
+                    vTotal.toFixed(2),
+                    del.documentation || 0,
+                    del.diplomatic_courtesy || 0,
+                    del.lobbying || 0,
+                    del.chits_substantive || 0,
+                    del.chits_reply || 0,
+                    del.final_doc || 0,
+                    (del.totalScore || 0).toFixed(2),
+                    "" // Placeholder for Award
+                ];
+                csvContent += row.join(",") + "\r\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "mun_marksheet.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+    </script>
+</body>
+</html>
